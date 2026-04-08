@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environments
+.venv/
+env/
+conda-env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+
+# Data files (optional)
+*.csv
+*.txt
+
+# Streamlit
+.streamlit/
+
+# VS Code
+.vscode/

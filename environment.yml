@@ -1,0 +1,15 @@
+name: padel-imu
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pandas
+  - numpy
+  - matplotlib
+  - jupyter
+  - ipykernel
+  - streamlit
+  - pytest
+  - pip
+  - pip:
+      - -e .
