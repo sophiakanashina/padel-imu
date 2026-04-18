@@ -22,3 +22,5 @@ conda-env/
 
 # VS Code
 .vscode/
+
+*.egg-info/
