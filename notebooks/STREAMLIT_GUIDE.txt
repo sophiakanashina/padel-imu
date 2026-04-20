@@ -1,0 +1,103 @@
+STREAMLIT APP — DEVELOPER GUIDE
+================================
+
+The pipeline is already built and tested. Your job is to build the UI on top of it.
+Everything in src/padel_imu/ is ready to import — you should not need to touch it.
+
+
+SETUP
+-----
+1. Clone the repo and activate the environment:
+
+   conda activate padel-imu
+
+2. Install the package in editable mode (if not already done):
+
+   pip install -e .
+
+3. Run the existing tests to make sure everything is working:
+
+   pytest tests/ -v
+
+4. Launch the Streamlit app during development:
+
+   streamlit run app/streamlit_app.py
+
+
+THE PIPELINE
+------------
+One function does everything:
+
+   from padel_imu import run_full_analysis
+
+   df, metrics = run_full_analysis(uploaded_file, device_name=None)
+
+Arguments:
+  - uploaded_file  : a file path (str) OR a Streamlit UploadedFile object directly
+  - device_name    : optional — if the file contains two sensors (two players),
+                     pass the device name string to analyse only that one.
+                     If None, all rows are used.
+
+Returns:
+  - df      : processed DataFrame — use this for charts
+  - metrics : dict — use this for stat cards
+
+
+METRICS DICT (keys)
+-------------------
+  "Duration (s)"
+  "Total Distance (m)"
+  "Max Speed (km/h)"
+  "Average Speed (km/h)"   — mean speed while moving (> 0.1 m/s)
+  "HSR Distance (m)"       — distance covered above 6 km/h (High Speed Running)
+  "HSR Time (s)"
+  "LSR Distance (m)"       — distance covered at or below 6 km/h (Low Speed Running)
+  "LSR Time (s)"
+
+
+PROCESSED DATAFRAME (useful columns for charts)
+------------------------------------------------
+  t           — seconds elapsed since first sample (use as x-axis)
+  speed_kmh   — player speed in km/h (use for speed-over-time chart)
+  speed_m_s   — same in m/s
+  dist_m      — distance covered in each time step (cumsum gives total distance over time)
+  time        — original datetime timestamp
+
+
+SUGGESTED UI STRUCTURE
+-----------------------
+1. File uploader (st.file_uploader, type="txt")
+2. Optional: device selector — if file has multiple devices, show a dropdown
+   (hint: check df["DeviceName"].unique() after loading raw file)
+3. Stat cards row — st.metric() for the 8 metrics above
+4. Speed over time chart — st.line_chart(df.set_index("t")["speed_kmh"])
+5. Cumulative distance chart — df["dist_m"].cumsum()
+6. HSR vs LSR breakdown — bar chart or two st.metric columns
+
+
+KNOWN DATA QUALITY ISSUE
+-------------------------
+WitMotion's pre-integrated speed channels drift over time due to accelerometer bias.
+This causes unrealistically high distance and speed values on some recordings.
+A speed cap / filter is planned but not yet implemented in the pipeline.
+For now, treat Max Speed > 30 km/h with scepticism if the sensor is body-worn.
+This will be fixed in the pipeline — the Streamlit app does not need to handle it.
+
+
+FILE STRUCTURE
+--------------
+  src/padel_imu/
+    __init__.py       <- run_full_analysis() lives here
+    loader.py         <- load_raw(), prepare_sensor_df()
+    speed.py          <- add_speed_columns()
+    distance.py       <- add_distance_columns()
+    running_metrics.py <- compute_running_metrics()
+    helpers.py        <- format_metrics() (terminal pretty-print, not needed in Streamlit)
+    __main__.py       <- CLI entry point (ignore this)
+
+  data/
+    raw/              <- put new .txt sensor files here
+    processed/        <- processed CSVs saved here when using --csv flag
+
+  tests/              <- run pytest tests/ before pushing any changes
+  app/streamlit_app.py <- YOUR FILE — build the UI here
