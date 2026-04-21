@@ -1,9 +1,0 @@
-Metadata-Version: 2.4
-Name: padel-imu
-Version: 0.1.0
-Summary: IMU-based movement analysis for padel players
-Author: Sophia and Sandu
-Requires-Python: >=3.11
-Dynamic: author
-Dynamic: requires-python
-Dynamic: summary
