@@ -316,8 +316,51 @@ st.markdown("<hr>", unsafe_allow_html=True)
 
 # ── movement path & replay ────────────────────────────────────────────────────
 st.markdown('<div class="sec-label">Movement path & replay</div>', unsafe_allow_html=True)
-st.caption("Path estimated from sensor heading + normalised speed (dead-reckoning). "
-           "Shape reflects real movement patterns; absolute scale is approximate.")
+
+# ── court normalisation ───────────────────────────────────────────────────────
+# The dead-reckoned path is a uniformly scaled version of the real path.
+# Assuming the player uses the full court during the session, the bounding box
+# of the path is proportional to the real court (10 m × 20 m).
+# k_x = path_span_x / 10,  k_y = path_span_y / 20
+COURT_W, COURT_L = 10.0, 20.0
+
+x_min, x_max = df["x_m"].min(), df["x_m"].max()
+y_min, y_max = df["y_m"].min(), df["y_m"].max()
+k_x = (x_max - x_min) / COURT_W
+k_y = (y_max - y_min) / COURT_L
+
+df["cx"] = (df["x_m"] - x_min) / k_x   # 0 → 10 m
+df["cy"] = (df["y_m"] - y_min) / k_y   # 0 → 20 m
+
+ki1, ki2, ki3 = st.columns(3)
+ki1.metric("Scale k_x", f"{k_x:.2f}", help="Raw units per metre (X axis)")
+ki2.metric("Scale k_y", f"{k_y:.2f}", help="Raw units per metre (Y axis)")
+ki3.metric("Aspect ratio", f"{(k_x/k_y):.2f}", help="1.0 = perfect square scaling")
+st.caption("Normalised assuming player covered the full court. "
+           "k values close to each other = consistent scaling in both axes.")
+
+# court outline shapes (Plotly layout shapes)
+_W, _L = COURT_W, COURT_L
+_COURT_SHAPES = [
+    # outer boundary
+    dict(type="rect", x0=0, y0=0, x1=_W, y1=_L,
+         line=dict(color="#ffffff", width=2)),
+    # net
+    dict(type="line", x0=0, y0=_L/2, x1=_W, y1=_L/2,
+         line=dict(color="#4cc9f0", width=2, dash="solid")),
+    # service lines (3 m from each baseline)
+    dict(type="line", x0=0, y0=3,      x1=_W, y1=3,
+         line=dict(color="rgba(255,255,255,0.35)", width=1, dash="dash")),
+    dict(type="line", x0=0, y0=_L-3,   x1=_W, y1=_L-3,
+         line=dict(color="rgba(255,255,255,0.35)", width=1, dash="dash")),
+    # centre service line
+    dict(type="line", x0=_W/2, y0=3,   x1=_W/2, y1=_L-3,
+         line=dict(color="rgba(255,255,255,0.25)", width=1, dash="dot")),
+]
+_COURT_ANNOTS = [
+    dict(x=_W/2, y=_L/2+0.6, text="NET", showarrow=False,
+         font=dict(color="#4cc9f0", size=9)),
+]
 
 # downsample to ≤400 points for path charts, ≤120 frames for animation
 _step_path  = max(1, len(df) // 400)
@@ -333,51 +376,51 @@ path_col1, path_col2 = st.columns(2)
 
 # ── 2D top-down ───────────────────────────────────────────────────────────────
 with path_col1:
-    st.markdown("**2D path — top-down**")
+    st.markdown("**2D path — court view**")
     fig_2d = go.Figure()
 
-    # ghost trail
     fig_2d.add_trace(go.Scatter(
-        x=path_df["x_m"], y=path_df["y_m"], mode="lines",
+        x=path_df["cx"], y=path_df["cy"], mode="lines",
         line=dict(color="rgba(255,255,255,0.10)", width=1.5),
         hoverinfo="skip", showlegend=False,
     ))
-    # speed-coloured dots
     fig_2d.add_trace(go.Scatter(
-        x=path_df["x_m"], y=path_df["y_m"], mode="markers",
+        x=path_df["cx"], y=path_df["cy"], mode="markers",
         marker=dict(size=5, color=path_df["speed_kmh"], colorscale=_COLORSCALE,
                     colorbar=dict(title="km/h", thickness=12, len=0.7), showscale=True),
         text=[f"t={t:.1f}s &nbsp; {s:.1f} km/h"
               for t, s in zip(path_df["t"], path_df["speed_kmh"])],
         hovertemplate="%{text}<extra></extra>", showlegend=False,
     ))
-    # start / end markers
     fig_2d.add_trace(go.Scatter(
-        x=[path_df["x_m"].iloc[0]], y=[path_df["y_m"].iloc[0]],
+        x=[path_df["cx"].iloc[0]], y=[path_df["cy"].iloc[0]],
         mode="markers+text", text=["START"], textposition="top right",
         marker=dict(size=10, color="#4cc9f0", symbol="circle"),
         showlegend=False, hoverinfo="skip",
     ))
     fig_2d.add_trace(go.Scatter(
-        x=[path_df["x_m"].iloc[-1]], y=[path_df["y_m"].iloc[-1]],
+        x=[path_df["cx"].iloc[-1]], y=[path_df["cy"].iloc[-1]],
         mode="markers+text", text=["END"], textposition="top right",
         marker=dict(size=10, color="#f4a261", symbol="square"),
         showlegend=False, hoverinfo="skip",
     ))
     fig_2d.update_layout(
         **_LAYOUT_BASE,
-        xaxis=dict(title="x (m)", gridcolor="#2e2e34", zerolinecolor="#3a3a3e"),
-        yaxis=dict(title="y (m)", gridcolor="#2e2e34", zerolinecolor="#3a3a3e",
-                   scaleanchor="x"),
+        shapes=_COURT_SHAPES,
+        annotations=_COURT_ANNOTS,
+        xaxis=dict(title="Court width (m)", gridcolor="#2e2e34", zerolinecolor="#3a3a3e",
+                   range=[-0.5, COURT_W + 0.5]),
+        yaxis=dict(title="Court length (m)", gridcolor="#2e2e34", zerolinecolor="#3a3a3e",
+                   scaleanchor="x", range=[-0.5, COURT_L + 0.5]),
     )
     st.plotly_chart(fig_2d, use_container_width=True)
 
 # ── 3D speed landscape ────────────────────────────────────────────────────────
 with path_col2:
-    st.markdown("**3D speed landscape** — Z axis = speed")
+    st.markdown("**3D speed landscape** — court XY, speed as Z")
     fig_3d = go.Figure()
     fig_3d.add_trace(go.Scatter3d(
-        x=path_df["x_m"], y=path_df["y_m"], z=path_df["speed_kmh"],
+        x=path_df["cx"], y=path_df["cy"], z=path_df["speed_kmh"],
         mode="lines+markers",
         line=dict(color=path_df["speed_kmh"].tolist(), colorscale="RdYlGn_r", width=3),
         marker=dict(size=2, color=path_df["speed_kmh"], colorscale=_COLORSCALE,
@@ -386,13 +429,32 @@ with path_col2:
               for t, s in zip(path_df["t"], path_df["speed_kmh"])],
         hovertemplate="%{text}<extra></extra>",
     ))
+    # court floor outline at z=0
+    court_x = [0, COURT_W, COURT_W, 0, 0]
+    court_y = [0, 0, COURT_L, COURT_L, 0]
+    court_z = [0, 0, 0, 0, 0]
+    fig_3d.add_trace(go.Scatter3d(
+        x=court_x, y=court_y, z=court_z,
+        mode="lines", line=dict(color="rgba(255,255,255,0.3)", width=2),
+        hoverinfo="skip", showlegend=False,
+    ))
+    # net line at z=0
+    fig_3d.add_trace(go.Scatter3d(
+        x=[0, COURT_W], y=[COURT_L/2, COURT_L/2], z=[0, 0],
+        mode="lines", line=dict(color="#4cc9f0", width=2),
+        hoverinfo="skip", showlegend=False,
+    ))
     fig_3d.update_layout(
         paper_bgcolor="#252529", font_color="#ccc",
         scene=dict(
             bgcolor="#1a1a1e",
-            xaxis=dict(title="x (m)", gridcolor="#2e2e34", color="#888"),
-            yaxis=dict(title="y (m)", gridcolor="#2e2e34", color="#888"),
+            xaxis=dict(title="width (m)", gridcolor="#2e2e34", color="#888",
+                       range=[0, COURT_W]),
+            yaxis=dict(title="length (m)", gridcolor="#2e2e34", color="#888",
+                       range=[0, COURT_L]),
             zaxis=dict(title="speed (km/h)", gridcolor="#2e2e34", color="#888"),
+            aspectmode="manual",
+            aspectratio=dict(x=1, y=2, z=0.5),
         ),
         margin=dict(l=0, r=0, t=0, b=0), height=420,
     )
@@ -403,12 +465,7 @@ st.markdown("**Live replay**")
 st.caption("▶ Play steps through the session in real-time proportion. "
            "Drag the slider to scrub to any moment.")
 
-trail = 40  # past points shown as fading trail per frame
-x_pad = (anim_df["x_m"].max() - anim_df["x_m"].min()) * 0.05 + 1
-y_pad = (anim_df["y_m"].max() - anim_df["y_m"].min()) * 0.05 + 1
-x_range = [anim_df["x_m"].min() - x_pad, anim_df["x_m"].max() + x_pad]
-y_range = [anim_df["y_m"].min() - y_pad, anim_df["y_m"].max() + y_pad]
-
+trail = 40
 frames = []
 for i, row in anim_df.iterrows():
     chunk = anim_df.iloc[max(0, i - trail) : i + 1]
@@ -417,10 +474,10 @@ for i, row in anim_df.iterrows():
 
     frames.append(go.Frame(
         data=[
-            go.Scatter(x=chunk["x_m"], y=chunk["y_m"], mode="lines",
+            go.Scatter(x=chunk["cx"], y=chunk["cy"], mode="lines",
                        line=dict(color="rgba(200,200,200,0.18)", width=1.5),
                        showlegend=False),
-            go.Scatter(x=[anim_df["x_m"].iloc[i]], y=[anim_df["y_m"].iloc[i]],
+            go.Scatter(x=[anim_df["cx"].iloc[i]], y=[anim_df["cy"].iloc[i]],
                        mode="markers",
                        marker=dict(size=12, color=dot_color,
                                    line=dict(color="#fff", width=1.5)),
@@ -436,23 +493,25 @@ for i, row in anim_df.iterrows():
 
 fig_replay = go.Figure(
     data=[
-        go.Scatter(x=anim_df["x_m"], y=anim_df["y_m"], mode="lines",
+        go.Scatter(x=anim_df["cx"], y=anim_df["cy"], mode="lines",
                    line=dict(color="rgba(255,255,255,0.06)", width=1),
                    showlegend=False),
-        go.Scatter(x=[anim_df["x_m"].iloc[0]], y=[anim_df["y_m"].iloc[0]],
+        go.Scatter(x=[anim_df["cx"].iloc[0]], y=[anim_df["cy"].iloc[0]],
                    mode="markers", marker=dict(size=12, color=GREEN,
                    line=dict(color="#fff", width=1.5)), showlegend=False),
     ],
     frames=frames,
     layout=go.Layout(
         paper_bgcolor="#252529", plot_bgcolor="#252529", font_color="#ccc",
-        height=500,
+        height=560,
         margin=dict(l=10, r=10, t=60, b=50),
+        shapes=_COURT_SHAPES,
+        annotations=_COURT_ANNOTS,
         title=dict(text="Press ▶ to start", font=dict(size=13, color="#aaa")),
-        xaxis=dict(title="x (m)", gridcolor="#2e2e34", zerolinecolor="#3a3a3e",
-                   range=x_range),
-        yaxis=dict(title="y (m)", gridcolor="#2e2e34", zerolinecolor="#3a3a3e",
-                   scaleanchor="x", range=y_range),
+        xaxis=dict(title="Court width (m)", gridcolor="#2e2e34", zerolinecolor="#3a3a3e",
+                   range=[-0.5, COURT_W + 0.5]),
+        yaxis=dict(title="Court length (m)", gridcolor="#2e2e34", zerolinecolor="#3a3a3e",
+                   scaleanchor="x", range=[-0.5, COURT_L + 0.5]),
         updatemenus=[dict(
             type="buttons", showactive=False,
             y=1.13, x=0.5, xanchor="center",
