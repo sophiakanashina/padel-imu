@@ -1,3 +1,6 @@
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
