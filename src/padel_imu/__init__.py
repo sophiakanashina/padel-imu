@@ -2,6 +2,7 @@ from .loader import load_raw, prepare_sensor_df
 from .speed import add_speed_columns
 from .distance import add_distance_columns
 from .running_metrics import compute_running_metrics
+from .trajectory import add_position_columns
 
 
 def run_full_analysis(
@@ -22,7 +23,7 @@ def run_full_analysis(
     Returns
     -------
     df : pd.DataFrame
-        Processed DataFrame with speed and distance columns added.
+        Processed DataFrame with speed, distance, and position columns added.
     metrics : dict
         Summary metrics dictionary.
     """
@@ -30,5 +31,6 @@ def run_full_analysis(
     df = prepare_sensor_df(df, device_name=device_name)
     df = add_speed_columns(df)
     df = add_distance_columns(df)
+    df = add_position_columns(df)
     metrics = compute_running_metrics(df)
     return df, metrics

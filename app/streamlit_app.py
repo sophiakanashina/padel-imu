@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import numpy as np
+import plotly.graph_objects as go
 
 from padel_imu import run_full_analysis
 from padel_imu.loader import load_raw
@@ -307,6 +308,173 @@ with ch6:
     fig.tight_layout(pad=1.2)
     st.pyplot(fig)
     plt.close(fig)
+
+st.markdown("<hr>", unsafe_allow_html=True)
+
+# ── movement path & replay ────────────────────────────────────────────────────
+st.markdown('<div class="sec-label">Movement path & replay</div>', unsafe_allow_html=True)
+st.caption("Path estimated from sensor heading + normalised speed (dead-reckoning). "
+           "Shape reflects real movement patterns; absolute scale is approximate.")
+
+# downsample to ≤400 points for path charts, ≤120 frames for animation
+_step_path  = max(1, len(df) // 400)
+_step_anim  = max(1, len(df) // 120)
+path_df = df.iloc[::_step_path].reset_index(drop=True)
+anim_df = df.iloc[::_step_anim].reset_index(drop=True)
+
+_COLORSCALE = [[0, "#2dc653"], [0.45, "#f4a261"], [1, "#e63946"]]
+_LAYOUT_BASE = dict(paper_bgcolor="#252529", plot_bgcolor="#252529", font_color="#ccc",
+                    margin=dict(l=10, r=10, t=30, b=40), height=420)
+
+path_col1, path_col2 = st.columns(2)
+
+# ── 2D top-down ───────────────────────────────────────────────────────────────
+with path_col1:
+    st.markdown("**2D path — top-down**")
+    fig_2d = go.Figure()
+
+    # ghost trail
+    fig_2d.add_trace(go.Scatter(
+        x=path_df["x_m"], y=path_df["y_m"], mode="lines",
+        line=dict(color="rgba(255,255,255,0.10)", width=1.5),
+        hoverinfo="skip", showlegend=False,
+    ))
+    # speed-coloured dots
+    fig_2d.add_trace(go.Scatter(
+        x=path_df["x_m"], y=path_df["y_m"], mode="markers",
+        marker=dict(size=5, color=path_df["speed_kmh"], colorscale=_COLORSCALE,
+                    colorbar=dict(title="km/h", thickness=12, len=0.7), showscale=True),
+        text=[f"t={t:.1f}s &nbsp; {s:.1f} km/h"
+              for t, s in zip(path_df["t"], path_df["speed_kmh"])],
+        hovertemplate="%{text}<extra></extra>", showlegend=False,
+    ))
+    # start / end markers
+    fig_2d.add_trace(go.Scatter(
+        x=[path_df["x_m"].iloc[0]], y=[path_df["y_m"].iloc[0]],
+        mode="markers+text", text=["START"], textposition="top right",
+        marker=dict(size=10, color="#4cc9f0", symbol="circle"),
+        showlegend=False, hoverinfo="skip",
+    ))
+    fig_2d.add_trace(go.Scatter(
+        x=[path_df["x_m"].iloc[-1]], y=[path_df["y_m"].iloc[-1]],
+        mode="markers+text", text=["END"], textposition="top right",
+        marker=dict(size=10, color="#f4a261", symbol="square"),
+        showlegend=False, hoverinfo="skip",
+    ))
+    fig_2d.update_layout(
+        **_LAYOUT_BASE,
+        xaxis=dict(title="x (m)", gridcolor="#2e2e34", zerolinecolor="#3a3a3e"),
+        yaxis=dict(title="y (m)", gridcolor="#2e2e34", zerolinecolor="#3a3a3e",
+                   scaleanchor="x"),
+    )
+    st.plotly_chart(fig_2d, use_container_width=True)
+
+# ── 3D speed landscape ────────────────────────────────────────────────────────
+with path_col2:
+    st.markdown("**3D speed landscape** — Z axis = speed")
+    fig_3d = go.Figure()
+    fig_3d.add_trace(go.Scatter3d(
+        x=path_df["x_m"], y=path_df["y_m"], z=path_df["speed_kmh"],
+        mode="lines+markers",
+        line=dict(color=path_df["speed_kmh"].tolist(), colorscale="RdYlGn_r", width=3),
+        marker=dict(size=2, color=path_df["speed_kmh"], colorscale=_COLORSCALE,
+                    showscale=False),
+        text=[f"t={t:.1f}s &nbsp; {s:.1f} km/h"
+              for t, s in zip(path_df["t"], path_df["speed_kmh"])],
+        hovertemplate="%{text}<extra></extra>",
+    ))
+    fig_3d.update_layout(
+        paper_bgcolor="#252529", font_color="#ccc",
+        scene=dict(
+            bgcolor="#1a1a1e",
+            xaxis=dict(title="x (m)", gridcolor="#2e2e34", color="#888"),
+            yaxis=dict(title="y (m)", gridcolor="#2e2e34", color="#888"),
+            zaxis=dict(title="speed (km/h)", gridcolor="#2e2e34", color="#888"),
+        ),
+        margin=dict(l=0, r=0, t=0, b=0), height=420,
+    )
+    st.plotly_chart(fig_3d, use_container_width=True)
+
+# ── animated replay ───────────────────────────────────────────────────────────
+st.markdown("**Live replay**")
+st.caption("▶ Play steps through the session in real-time proportion. "
+           "Drag the slider to scrub to any moment.")
+
+trail = 40  # past points shown as fading trail per frame
+x_pad = (anim_df["x_m"].max() - anim_df["x_m"].min()) * 0.05 + 1
+y_pad = (anim_df["y_m"].max() - anim_df["y_m"].min()) * 0.05 + 1
+x_range = [anim_df["x_m"].min() - x_pad, anim_df["x_m"].max() + x_pad]
+y_range = [anim_df["y_m"].min() - y_pad, anim_df["y_m"].max() + y_pad]
+
+frames = []
+for i, row in anim_df.iterrows():
+    chunk = anim_df.iloc[max(0, i - trail) : i + 1]
+    spd   = anim_df["speed_kmh"].iloc[i]
+    dot_color = RED if spd > 6 else GREEN
+
+    frames.append(go.Frame(
+        data=[
+            go.Scatter(x=chunk["x_m"], y=chunk["y_m"], mode="lines",
+                       line=dict(color="rgba(200,200,200,0.18)", width=1.5),
+                       showlegend=False),
+            go.Scatter(x=[anim_df["x_m"].iloc[i]], y=[anim_df["y_m"].iloc[i]],
+                       mode="markers",
+                       marker=dict(size=12, color=dot_color,
+                                   line=dict(color="#fff", width=1.5)),
+                       showlegend=False),
+        ],
+        name=str(i),
+        layout=go.Layout(title_text=(
+            f"t = {anim_df['t'].iloc[i]:.1f}s  │  "
+            f"{spd:.1f} km/h  │  "
+            f"{'🔴 HSR' if spd > 6 else '🟢 LSR'}"
+        )),
+    ))
+
+fig_replay = go.Figure(
+    data=[
+        go.Scatter(x=anim_df["x_m"], y=anim_df["y_m"], mode="lines",
+                   line=dict(color="rgba(255,255,255,0.06)", width=1),
+                   showlegend=False),
+        go.Scatter(x=[anim_df["x_m"].iloc[0]], y=[anim_df["y_m"].iloc[0]],
+                   mode="markers", marker=dict(size=12, color=GREEN,
+                   line=dict(color="#fff", width=1.5)), showlegend=False),
+    ],
+    frames=frames,
+    layout=go.Layout(
+        paper_bgcolor="#252529", plot_bgcolor="#252529", font_color="#ccc",
+        height=500,
+        margin=dict(l=10, r=10, t=60, b=50),
+        title=dict(text="Press ▶ to start", font=dict(size=13, color="#aaa")),
+        xaxis=dict(title="x (m)", gridcolor="#2e2e34", zerolinecolor="#3a3a3e",
+                   range=x_range),
+        yaxis=dict(title="y (m)", gridcolor="#2e2e34", zerolinecolor="#3a3a3e",
+                   scaleanchor="x", range=y_range),
+        updatemenus=[dict(
+            type="buttons", showactive=False,
+            y=1.13, x=0.5, xanchor="center",
+            buttons=[
+                dict(label="▶  Play", method="animate",
+                     args=[None, dict(frame=dict(duration=100, redraw=False),
+                                      fromcurrent=True, mode="immediate")]),
+                dict(label="⏸  Pause", method="animate",
+                     args=[[None], dict(frame=dict(duration=0, redraw=False),
+                                        mode="immediate")]),
+            ],
+        )],
+        sliders=[dict(
+            currentvalue=dict(prefix="", font=dict(color="#888", size=11)),
+            pad=dict(t=8, b=4),
+            steps=[dict(
+                method="animate",
+                args=[[f.name], dict(mode="immediate",
+                                     frame=dict(duration=0, redraw=False))],
+                label=f"{anim_df['t'].iloc[j]:.0f}s",
+            ) for j, f in enumerate(frames)],
+        )],
+    ),
+)
+st.plotly_chart(fig_replay, use_container_width=True)
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
