@@ -17,8 +17,8 @@ conda-env/
 *.csv
 *.txt
 
-# Streamlit
-.streamlit/
+# but keep requirements
+!requirements.txt
 
 # VS Code
 .vscode/
