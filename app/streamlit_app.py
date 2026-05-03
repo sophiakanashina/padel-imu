@@ -125,8 +125,27 @@ if uploaded_file is None:
     )
     st.stop()
 
-# ── device selection ──────────────────────────────────────────────────────────
+# ── NaN validation ───────────────────────────────────────────────────────────
 raw_df = load_raw(uploaded_file)
+
+_KEY_COLS = ["AngleZ(°)", "SpeedX(mm/s)", "SpeedY(mm/s)"]
+_present  = [c for c in _KEY_COLS if c in raw_df.columns]
+if _present:
+    _nan_pct = raw_df[_present].isna().mean().mean() * 100
+    if _nan_pct > 50:
+        st.error(
+            f"**{_nan_pct:.0f}% of key sensor values are missing (NaN).** "
+            "This recording is likely corrupt or was exported incorrectly. "
+            "Re-export from the WitMotion app and try again."
+        )
+        st.stop()
+    elif _nan_pct > 10:
+        st.warning(
+            f"**{_nan_pct:.1f}% of key sensor values are missing.** "
+            "Results may be inaccurate. Consider re-recording if metrics look wrong."
+        )
+
+# ── device selection ──────────────────────────────────────────────────────────
 uploaded_file.seek(0)
 
 device_name = None
@@ -311,6 +330,16 @@ with ch6:
     fig.tight_layout(pad=1.2)
     st.pyplot(fig)
     plt.close(fig)
+    with st.expander("How to read this chart"):
+        st.markdown(
+            "Each **bubble** is one sprint — a continuous burst where speed stayed above 6 km/h.  \n"
+            "- **X axis** — sprint number in chronological order  \n"
+            "- **Y axis** — peak speed reached during that sprint  \n"
+            "- **Bubble size** — distance covered during the sprint (bigger = longer run)  \n"
+            "- **Colour** — green → red as peak speed increases  \n\n"
+            "Look for: did intensity drop off later in the session? "
+            "Were the longer sprints also the faster ones?"
+        )
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
