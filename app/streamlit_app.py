@@ -444,12 +444,18 @@ with path_col1:
     )
     st.plotly_chart(fig_2d, use_container_width=True)
 
-# ── 3D speed landscape ────────────────────────────────────────────────────────
+# ── 3D chart ──────────────────────────────────────────────────────────────────
 with path_col2:
-    st.markdown("**3D speed landscape** — court XY, speed as Z")
+    _has_real_z = bool(df.get("has_real_z", pd.Series([False])).iloc[0])
+    _z_vals     = path_df["z_m"] if _has_real_z else path_df["speed_kmh"]
+    _z_label    = "height (m)"  if _has_real_z else "speed (km/h)"
+    _z_title    = "3D movement path — real vertical height" if _has_real_z \
+                  else "3D speed landscape — court XY, speed as Z"
+
+    st.markdown(f"**{_z_title}**")
     fig_3d = go.Figure()
     fig_3d.add_trace(go.Scatter3d(
-        x=path_df["cx"], y=path_df["cy"], z=path_df["speed_kmh"],
+        x=path_df["cx"], y=path_df["cy"], z=_z_vals,
         mode="lines+markers",
         line=dict(color=path_df["speed_kmh"].tolist(), colorscale="RdYlGn_r", width=3),
         marker=dict(size=2, color=path_df["speed_kmh"], colorscale=_COLORSCALE,
@@ -458,20 +464,17 @@ with path_col2:
               for t, s in zip(path_df["t"], path_df["speed_kmh"])],
         hovertemplate="%{text}<extra></extra>",
     ))
-    # court floor outline at z=0
     court_x = [0, COURT_W, COURT_W, 0, 0]
     court_y = [0, 0, COURT_L, COURT_L, 0]
     court_z = [0, 0, 0, 0, 0]
     fig_3d.add_trace(go.Scatter3d(
-        x=court_x, y=court_y, z=court_z,
-        mode="lines", line=dict(color="rgba(255,255,255,0.3)", width=2),
+        x=court_x, y=court_y, z=court_z, mode="lines",
+        line=dict(color="rgba(255,255,255,0.3)", width=2),
         hoverinfo="skip", showlegend=False,
     ))
-    # net line at z=0
     fig_3d.add_trace(go.Scatter3d(
-        x=[0, COURT_W], y=[COURT_L/2, COURT_L/2], z=[0, 0],
-        mode="lines", line=dict(color="#4cc9f0", width=2),
-        hoverinfo="skip", showlegend=False,
+        x=[0, COURT_W], y=[COURT_L/2, COURT_L/2], z=[0, 0], mode="lines",
+        line=dict(color="#4cc9f0", width=2), hoverinfo="skip", showlegend=False,
     ))
     fig_3d.update_layout(
         paper_bgcolor="#252529", font_color="#ccc",
@@ -481,7 +484,7 @@ with path_col2:
                        range=[0, COURT_W]),
             yaxis=dict(title="length (m)", gridcolor="#2e2e34", color="#888",
                        range=[0, COURT_L]),
-            zaxis=dict(title="speed (km/h)", gridcolor="#2e2e34", color="#888"),
+            zaxis=dict(title=_z_label, gridcolor="#2e2e34", color="#888"),
             aspectmode="manual",
             aspectratio=dict(x=1, y=2, z=0.5),
         ),
