@@ -167,6 +167,48 @@ with st.spinner(""):
 
 m = metrics  # shorthand
 
+# ── court-scaling correction ──────────────────────────────────────────────────
+# The dead-reckoned path is uniformly scaled vs the real court (10 m × 20 m).
+# We derive k_x / k_y from the bounding box and use the average to scale
+# distance and speed metrics back to realistic values.  This compensates for
+# the constant ~11 m/s DC bias in the WitMotion speed channels.
+COURT_W, COURT_L = 10.0, 20.0
+
+_x_min, _x_max = df["x_m"].min(), df["x_m"].max()
+_y_min, _y_max = df["y_m"].min(), df["y_m"].max()
+k_x = max((_x_max - _x_min) / COURT_W, 1e-6)
+k_y = max((_y_max - _y_min) / COURT_L, 1e-6)
+k_avg = (k_x + k_y) / 2
+
+df["cx"] = (df["x_m"] - _x_min) / k_x
+df["cy"] = (df["y_m"] - _y_min) / k_y
+
+# Scale the raw speed/distance columns down by k_avg so charts and metrics use
+# realistic values.  Keep the original drifty data as *_raw for reference.
+df["speed_kmh_raw"] = df["speed_kmh"]
+df["dist_m_raw"]    = df["dist_m"]
+
+df["speed_kmh"] = df["speed_kmh"] / k_avg
+df["speed_m_s"] = df["speed_m_s"] / k_avg
+df["dist_m"]    = df["dist_m"] / k_avg
+
+# Reclassify HSR/LSR using corrected speed and override metrics
+_speed_kmh = df["speed_kmh"].to_numpy()
+_dist_step = df["dist_m"].to_numpy()
+_dt_arr    = df["dt"].to_numpy()
+_duration  = m["Duration (s)"]
+_total     = float(_dist_step.sum())
+_hsr_mask  = _speed_kmh > 6
+_lsr_mask  = (~_hsr_mask) & (_speed_kmh > 0.36)
+
+m["Total Distance (m)"]   = _total
+m["Max Speed (km/h)"]     = float(_speed_kmh.max())
+m["Average Speed (km/h)"] = (_total / _duration * 3.6) if _duration > 0 else 0.0
+m["HSR Distance (m)"]     = float(_dist_step[_hsr_mask].sum())
+m["HSR Time (s)"]         = float(_dt_arr[_hsr_mask].sum())
+m["LSR Distance (m)"]     = float(_dist_step[_lsr_mask].sum())
+m["LSR Time (s)"]         = float(_dt_arr[_lsr_mask].sum())
+
 # ── hero ──────────────────────────────────────────────────────────────────────
 st.markdown(
     f'<div class="hero">'
@@ -345,21 +387,6 @@ st.markdown("<hr>", unsafe_allow_html=True)
 
 # ── movement path & replay ────────────────────────────────────────────────────
 st.markdown('<div class="sec-label">Movement path & replay</div>', unsafe_allow_html=True)
-
-# ── court normalisation ───────────────────────────────────────────────────────
-# The dead-reckoned path is a uniformly scaled version of the real path.
-# Assuming the player uses the full court during the session, the bounding box
-# of the path is proportional to the real court (10 m × 20 m).
-# k_x = path_span_x / 10,  k_y = path_span_y / 20
-COURT_W, COURT_L = 10.0, 20.0
-
-x_min, x_max = df["x_m"].min(), df["x_m"].max()
-y_min, y_max = df["y_m"].min(), df["y_m"].max()
-k_x = (x_max - x_min) / COURT_W
-k_y = (y_max - y_min) / COURT_L
-
-df["cx"] = (df["x_m"] - x_min) / k_x   # 0 → 10 m
-df["cy"] = (df["y_m"] - y_min) / k_y   # 0 → 20 m
 
 ki1, ki2, ki3 = st.columns(3)
 ki1.metric("Scale k_x", f"{k_x:.2f}", help="Raw units per metre (X axis)")
